@@ -5,6 +5,7 @@
 import requests
 import time
 import json
+import webbrowser
 from datetime import datetime
 import urllib.parse as urlparse
 from urllib.parse import parse_qs
@@ -22,6 +23,8 @@ bhlist = []
 bbdict = {}
 amazonlist = []
 gamestoplist = []
+notify_user = "@everyone"
+should_open_in_browser = True
 
 #Function for start-up menu
 
@@ -54,6 +57,12 @@ menu()
 webhook_dict = return_data("./data/webhooks.json")
 urldict = return_data("./data/products.json")
 
+# HELPER FUNCTIONS
+
+def open_in_browser(url):
+    if should_open_in_browser:
+        webbrowser.open(url)
+
 #Declare classes for the webpage scraping functionality
 
 
@@ -77,7 +86,7 @@ class Amazon:
         html = driver.page_source
         if "To discuss automated access to Amazon data please contact api-services-support@amazon.com." in html:
             print("Amazons Bot Protection is preventing this call.")
-        else: 
+        else:
             status_raw = driver.find_element_by_xpath("//div[@id='olpOfferList']")
             status_text = status_raw.text
             title_raw = driver.find_element_by_xpath("//h1[@class='a-size-large a-spacing-none']")
@@ -86,7 +95,8 @@ class Amazon:
 
             if "Currently, there are no sellers that can deliver this item to your location." not in status_text:
                 print("[" + current_time + "] " + "In Stock: (Amazon.com) " + title + " - " + url)
-                slack_data = {'content': current_time + " " + title + " in stock at Amazon - " + url}
+                slack_data = {'content': notify_user + " " + current_time + " " + title + " in stock at Amazon - " + url}
+                open_in_browser(url)
                 if stockdict.get(url) == 'False':
                     response = requests.post(
                     webhook_url, data=json.dumps(slack_data),
@@ -124,7 +134,8 @@ class Gamestop:
 
         if "ADD TO CART" in status_text:
             print("[" + current_time + "] " + "In Stock: (Gamestop.com) " + title + " - " + url)
-            slack_data = {'content': current_time + " " + title + " in stock at Gamestop - " + url}
+            slack_data = {'content': notify_user + " " + current_time + " " + title + " in stock at Gamestop - " + url}
+            open_in_browser(url)
             if stockdict.get(url) == 'False':
                 response = requests.post(
                 webhook_url, data=json.dumps(slack_data),
@@ -150,9 +161,10 @@ class Target:
         if "Temporarily out of stock" in page.text:
             print("[" + current_time + "] " + "Sold Out: (Target.com) " + title)
             stockdict.update({url: 'False'})
-        else: 
+        else:
             print("[" + current_time + "] " + "In Stock: (Target.com) " + title + " - " + url)
-            slack_data = {'content': current_time + " " + title + " in stock at Target - " + url}
+            open_in_browser(url)
+            slack_data = {'content': notify_user + " " + current_time + " " + title + " in stock at Target - " + url}
             if stockdict.get(url) == 'False':
                 response = requests.post(
                 webhook_url, data=json.dumps(slack_data),
@@ -189,10 +201,11 @@ class BestBuy:
         elif stock_status == "CHECK_STORES":
             print(product_name + " sold out @ BestBuy (check stores status)")
             stockdict.update({sku: 'False'})
-        else: 
+        else:
             if stock_status == "ADD_TO_CART":
                 print("[" + current_time + "] " + "In Stock: (BestBuy.com) " + product_name + " - " + link)
-                slack_data = {'content': current_time + " " + product_name + " In Stock @ BestBuy " + link}
+                open_in_browser(url)
+                slack_data = {'content': notify_user + " " + current_time + " " + product_name + " In Stock @ BestBuy " + link}
                 if stockdict.get(sku) == 'False':
                     response = requests.post(
                     webhook_url, data=json.dumps(slack_data),
@@ -210,9 +223,10 @@ class Walmart:
         current_time = now.strftime("%H:%M:%S")
         page = requests.get(url)
         if page.status_code == 200:
-            if "Add to cart" in page.text:
+            if "Add to cart" in page.text and "$59" not in page.text:
                 print("[" + current_time + "] " + "In Stock: (Walmart.com) " + url)
-                slack_data = {'content': current_time + " " + url + " in stock at Walmart"}
+                open_in_browser(url)
+                slack_data = {'content': notify_user + " " + current_time + " " + url + " in stock at Walmart"}
                 if stockdict.get(url) == 'False':
                     try:
                         response = requests.post(
@@ -221,8 +235,10 @@ class Walmart:
                     except:
                         print("Webhook sending failed. Invalid URL configured.")
                 stockdict.update({url: 'True'})
-            else: 
+            else:
                 print("[" + current_time + "] " + "Sold Out: (Walmart.com) " + url)
+                if "$59" in page.text:
+                    print("                     Price too high!")
                 stockdict.update({url: 'False'})
 
 class BH:
@@ -237,7 +253,8 @@ class BH:
         if page.status_code == 200:
             if "Add to Cart" in page.text:
                 print("[" + current_time + "] " + "In Stock: (bhphotovideo.com) " + url)
-                slack_data = {'content': current_time + " " + url + " in stock at B&H"}
+                open_in_browser(url)
+                slack_data = {'content': notify_user + " " + current_time + " " + url + " in stock at B&H"}
                 if stockdict.get(url) == 'False':
                     response = requests.post(
                                              webhook_url, data=json.dumps(slack_data),
@@ -303,11 +320,11 @@ for url in urldict:
 
 #set all URLs to be "out of stock" to begin
 for url in urldict:
-    stockdict.update({url: 'False'}) 
+    stockdict.update({url: 'False'})
 #set all SKUs to be "out of stock" to begin
 for sku in sku_dict:
     stockdict.update({sku: 'False'})
-    
+
 #DECLARE SITE FUNCTIONS
 
 def amzfunc(url):
